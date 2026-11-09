@@ -1,0 +1,53 @@
+{
+  "name": "chesswake",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Offline chess puzzle alarm for macOS",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env CHESSWAKE_DEV_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.electron.json && vite build",
+    "start": "electron .",
+    "test": "vitest run",
+    "alarm:set": "node scripts/alarm-cli.mjs set",
+    "alarm:list": "node scripts/alarm-cli.mjs list",
+    "package:mac": "npm run build && electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.2.0",
+    "vitest": "^4.0.0",
+    "wait-on": "^9.0.0"
+  },
+  "build": {
+    "appId": "com.droz.chesswake",
+    "productName": "ChessWake",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "src/assets/pieces/LICENSE.txt",
+      "ATTRIBUTIONS.md",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg"
+    }
+  }
+}
