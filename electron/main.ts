@@ -1,10 +1,12 @@
 import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { advancePuzzle, CHESS_COM_STARTER_PUZZLE, isUsablePuzzle, parseChessComPuzzle, selectPuzzle, type Puzzle } from '../src/domain/puzzles';
 import { canEmergencyStop, isDue, localDateKey } from '../src/domain/alarm';
 import type { ActiveAlarm, Alarm, Snapshot, WakeRecord } from '../src/domain/types';
+import { developmentUrl, isTrustedPageUrl } from './security';
 
 type Stored = { alarms: Alarm[]; history: WakeRecord[]; puzzles: Puzzle[] };
 let stored: Stored = { alarms: [], history: [], puzzles: [CHESS_COM_STARTER_PUZZLE] };
@@ -16,7 +18,15 @@ let quitting = false;
 let puzzleSyncStatus: Snapshot['puzzleSyncStatus'] = 'idle';
 let syncInProgress = false;
 let lastFetchAt = 0;
+const devUrl = developmentUrl(app.isPackaged, process.env.CHESSWAKE_DEV_URL);
+const appPage = pathToFileURL(path.join(__dirname, '..', '..', 'dist', 'index.html')).href;
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+function assertTrusted(event: Electron.IpcMainInvokeEvent): void {
+  if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isTrustedPageUrl(event.senderFrame.url, appPage, devUrl)) {
+    throw new Error('Untrusted ChessWake request');
+  }
+}
 
 function dataPath(): string { return path.join(app.getPath('userData'), 'chesswake.json'); }
 function load(): void {
@@ -25,12 +35,14 @@ function load(): void {
       const value = JSON.parse(readFileSync(dataPath(), 'utf8')) as Partial<Stored>;
       const cached = Array.isArray(value.puzzles) ? value.puzzles.filter(isUsablePuzzle) : [];
       stored = { alarms: Array.isArray(value.alarms) ? value.alarms : [], history: Array.isArray(value.history) ? value.history : [], puzzles: cached.length ? cached : [CHESS_COM_STARTER_PUZZLE] };
+      chmodSync(dataPath(), 0o600);
     }
   } catch (error) { console.error('Could not read ChessWake settings:', error); }
 }
 function persist(): void {
   const temp = `${dataPath()}.tmp`;
-  writeFileSync(temp, JSON.stringify(stored, null, 2), 'utf8');
+  writeFileSync(temp, JSON.stringify(stored, null, 2), { encoding: 'utf8', mode: 0o600 });
+  chmodSync(temp, 0o600);
   renameSync(temp, dataPath());
 }
 function snapshot(): Snapshot {
@@ -117,11 +129,11 @@ function createWindow(): void {
   window = new BrowserWindow({
     width: 1120, height: 760, minWidth: 760, minHeight: 580,
     title: 'ChessWake', backgroundColor: '#0b101b',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  const devUrl = process.env.CHESSWAKE_DEV_URL;
-  if (devUrl) void window.loadURL(devUrl);
-  else void window.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'));
+  window.webContents.on('will-navigate', event => event.preventDefault());
+  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/www\.chess\.com\/daily\/\d{4}-\d{2}-\d{2}$/.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
@@ -133,6 +145,8 @@ function createWindow(): void {
     else window?.hide();
   });
   window.webContents.on('did-finish-load', () => broadcast());
+  if (devUrl) void window.loadURL(devUrl);
+  else void window.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'));
 }
 
 app.whenReady().then(() => {
@@ -147,8 +161,9 @@ app.whenReady().then(() => {
     { label: 'Quit ChessWake', click: () => app.quit() }
   ]));
   tray.on('click', showWindow);
-  ipcMain.handle('state:get', () => snapshot());
-  ipcMain.handle('alarm:save', (_event, input: { id?: string; label: string; time: string; enabled: boolean }) => {
+  ipcMain.handle('state:get', event => { assertTrusted(event); return snapshot(); });
+  ipcMain.handle('alarm:save', (event, input: { id?: string; label: string; time: string; enabled: boolean }) => {
+    assertTrusted(event);
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new Error('Invalid alarm time');
     const existing = stored.alarms.find(alarm => alarm.id === input.id);
     if (existing) Object.assign(existing, { label: String(input.label).slice(0, 50), time: input.time, enabled: Boolean(input.enabled), lastFiredDate: existing.time === input.time ? existing.lastFiredDate : null });
@@ -156,17 +171,20 @@ app.whenReady().then(() => {
     persist();
     return broadcast();
   });
-  ipcMain.handle('alarm:delete', (_event, id: string) => {
+  ipcMain.handle('alarm:delete', (event, id: string) => {
+    assertTrusted(event);
     stored.alarms = stored.alarms.filter(alarm => alarm.id !== id);
     persist();
     return broadcast();
   });
-  ipcMain.handle('alarm:test', () => {
+  ipcMain.handle('alarm:test', event => {
+    assertTrusted(event);
     if (!active) testAt = new Date(Date.now() + 10000);
     return broadcast();
   });
-  ipcMain.handle('puzzle:sync', () => syncPuzzles());
-  ipcMain.handle('alarm:move', (_event, from: string, to: string) => {
+  ipcMain.handle('puzzle:sync', event => { assertTrusted(event); return syncPuzzles(); });
+  ipcMain.handle('alarm:move', (event, from: string, to: string) => {
+    assertTrusted(event);
     if (!active) return { result: 'inactive', state: snapshot() };
     const advance = advancePuzzle(active.puzzle, active.stepIndex, from as never, to as never);
     const result = advance.result;
@@ -174,7 +192,8 @@ app.whenReady().then(() => {
     else { active.stepIndex = advance.stepIndex; broadcast(); }
     return { result, state: snapshot() };
   });
-  ipcMain.handle('alarm:emergency', () => {
+  ipcMain.handle('alarm:emergency', event => {
+    assertTrusted(event);
     const stopped = !!active && canEmergencyStop(active.startedAt);
     if (stopped) finishAlarm('emergency');
     return { stopped, state: snapshot() };

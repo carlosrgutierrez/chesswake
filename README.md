@@ -1,5 +1,7 @@
 # ChessWake
 
+Security findings and distribution risks are documented in [SECURITY_REVIEW.md](SECURITY_REVIEW.md).
+
 ChessWake is a local macOS chess puzzle alarm. Daily alarms and wake-up history are saved on this Mac. A test alarm rings 10 seconds after you arm it. When an alarm rings, ChessWake brings its window forward, enters fullscreen, stays on top, and repeats a chime. Select a piece and its destination. Correct moves advance the puzzle and ChessWake plays the opponent's reply. A legal checkmate stops the alarm; a wrong move resets the puzzle.
 
 ChessWake includes one credited Chess.com mate-in-two puzzle so it works offline immediately. When online, it checks Chess.com's documented daily and random daily puzzle API on launch and every 20 minutes. It saves up to 30 distinct puzzles locally. Only puzzles that end in checkmate within three player moves are accepted; `chess.js` checks each move and the final position. Chess.com does not provide a difficulty filter through this API, so saved puzzles may be harder than a 300–500 rating. The original beginner mate-in-one puzzles remain as a fallback if the local Chess.com cache is missing or invalid. No Chess.com account is required.
