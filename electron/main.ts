@@ -77,7 +77,7 @@ function startAlarm(label: string, id: string, scheduledFor: string): void {
 }
 function finishAlarm(outcome: WakeRecord['outcome']): void {
   if (!active) return;
-  stored.history.unshift({ id: randomUUID(), scheduledFor: active.scheduledFor, startedAt: active.startedAt, endedAt: new Date().toISOString(), outcome, label: active.label });
+  stored.history.unshift({ id: randomUUID(), scheduledFor: active.scheduledFor, startedAt: active.startedAt, endedAt: new Date().toISOString(), outcome, label: active.label, test: active.id.startsWith('test-'), mateIn: Math.ceil(active.puzzle.solution.length / 2) });
   stored.history = stored.history.slice(0, 100);
   active = null;
   persist();
@@ -128,7 +128,7 @@ async function syncPuzzles(): Promise<Snapshot> {
 function createWindow(): void {
   window = new BrowserWindow({
     width: 1120, height: 760, minWidth: 760, minHeight: 580,
-    title: 'ChessWake', backgroundColor: '#0b101b',
+    title: 'ChessWake', backgroundColor: '#191d1b',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   window.webContents.on('will-navigate', event => event.preventDefault());

@@ -1,6 +1,6 @@
 {
   "name": "chesswake",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Offline chess puzzle alarm for macOS",
   "main": "dist-electron/electron/main.js",
